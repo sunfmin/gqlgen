@@ -56,6 +56,7 @@ func (b *ModelsCodeBuilder) MarshalCode(ctx context.Context) (r []byte, err erro
 		)
 	}
 
+	root.Append(g.RawCode("\n"))
 	for _, m := range b.mb.Models {
 		s := g.Struct(fh.Go(m.Name))
 
