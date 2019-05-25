@@ -17,6 +17,8 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371 // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20180121065927-ffb13db8def0 // indirect
 	github.com/stretchr/testify v1.3.0
+	github.com/sunfmin/gogen v0.0.0-20190525070737-1f44405d87cb
+	github.com/theplant/testingutils v0.0.0-20181126090146-80e83e84b643 // indirect
 	github.com/urfave/cli v1.20.0
 	github.com/vektah/dataloaden v0.2.1-0.20190515034641-a19b9a6e7c9e
 	github.com/vektah/gqlparser v1.1.2

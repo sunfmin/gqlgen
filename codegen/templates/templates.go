@@ -2,6 +2,7 @@ package templates
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"go/types"
 	"io/ioutil"
@@ -17,11 +18,17 @@ import (
 
 	"github.com/99designs/gqlgen/internal/imports"
 	"github.com/pkg/errors"
+	"github.com/sunfmin/gogen"
 )
 
 // CurrentImports keeps track of all the import declarations that are needed during the execution of a plugin.
 // this is done with a global because subtemplates currently get called in functions. Lets aim to remove this eventually.
 var CurrentImports *Imports
+
+type RegionCode struct {
+	Region string
+	Code   gogen.Code
+}
 
 // Options specify various parameters to rendering a template.
 type Options struct {
@@ -34,7 +41,8 @@ type Options struct {
 	// will be parsed and rendered. If it's empty,
 	// the plugin processor will look for .gotpl files
 	// in the same directory of where you wrote the plugin.
-	Template string
+	Template    string
+	RegionCodes []*RegionCode
 	// Filename is the name of the file that will be
 	// written to the system disk once the template is rendered.
 	Filename        string
@@ -66,6 +74,7 @@ func Render(cfg Options) error {
 	t := template.New("").Funcs(funcs)
 
 	var roots []string
+	fmt.Println("cfg.Template", cfg.Template, callerFile)
 	if cfg.Template != "" {
 		var err error
 		t, err = t.New("template.gotpl").Parse(cfg.Template)
@@ -113,18 +122,44 @@ func Render(cfg Options) error {
 		}
 		return roots[i] < roots[j]
 	})
+
+	fmt.Println("roots", roots, cfg.Filename)
 	var buf bytes.Buffer
-	for _, root := range roots {
-		if cfg.RegionTags {
-			buf.WriteString("\n// region    " + center(70, "*", " "+root+" ") + "\n")
+
+	if len(cfg.RegionCodes) > 0 {
+		for _, rc := range cfg.RegionCodes {
+			root := rc.Region
+			if cfg.RegionTags {
+				buf.WriteString("\n// region    " + center(70, "*", " "+root+" ") + "\n")
+			}
+
+			if fhs, ok := rc.Code.(FuncsHelperSetter); ok {
+				fhs.SetFuncsHelper(newFuncsHelper())
+			}
+
+			err := gogen.Fprint(&buf, rc.Code, context.Background())
+			if err != nil {
+				return errors.Wrap(err, root)
+			}
+			if cfg.RegionTags {
+				buf.WriteString("\n// endregion " + center(70, "*", " "+root+" ") + "\n")
+			}
 		}
-		err := t.Lookup(root).Execute(&buf, cfg.Data)
-		if err != nil {
-			return errors.Wrap(err, root)
+
+	} else {
+		for _, root := range roots {
+			if cfg.RegionTags {
+				buf.WriteString("\n// region    " + center(70, "*", " "+root+" ") + "\n")
+			}
+			err := t.Lookup(root).Execute(&buf, cfg.Data)
+			if err != nil {
+				return errors.Wrap(err, root)
+			}
+			if cfg.RegionTags {
+				buf.WriteString("\n// endregion " + center(70, "*", " "+root+" ") + "\n")
+			}
 		}
-		if cfg.RegionTags {
-			buf.WriteString("\n// endregion " + center(70, "*", " "+root+" ") + "\n")
-		}
+
 	}
 
 	var result bytes.Buffer
@@ -177,6 +212,30 @@ func Funcs() template.FuncMap {
 		"render": func(filename string, tpldata interface{}) (*bytes.Buffer, error) {
 			return render(resolveName(filename, 0), tpldata)
 		},
+	}
+}
+
+type FuncsHelperSetter interface {
+	SetFuncsHelper(fh *FuncsHelper)
+}
+
+type FuncsHelper struct {
+	UcFirst       func(s string) string
+	LcFirst       func(s string) string
+	ReserveImport func(path string, aliases ...string) (string, error)
+	PrefixLines   func(prefix, s string) string
+	Go            func(name string) string
+	Ref           func(p types.Type) string
+}
+
+func newFuncsHelper() *FuncsHelper {
+	return &FuncsHelper{
+		UcFirst:       ucFirst,
+		LcFirst:       lcFirst,
+		ReserveImport: CurrentImports.Reserve,
+		PrefixLines:   prefixLines,
+		Go:            ToGo,
+		Ref:           ref,
 	}
 }
 
